@@ -104,10 +104,12 @@ async def extract_links(extractor, url, path):
 
 async def crawl(session, url, fn=None, subtree="", custom=None,make_dirs=True):
     doctype, path = await download(session, url,make_dirs)
+    if path is None:
+        return set()
     crawled.add(url)
     if custom:
         return await extract_links(custom, url, path)
-    if path is None or doctype != "text/html":
+    if  doctype != "text/html":
         return set()
     tree = html.parse(path, base_url=url)
     doc = tree.getroot()

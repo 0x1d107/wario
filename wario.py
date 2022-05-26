@@ -1,5 +1,5 @@
 #!/bin/env python
-import asyncio, argparse, sys
+import asyncio, argparse, sys,re 
 from os import makedirs
 import urllib.parse as uparse
 import urllib.robotparser
@@ -74,17 +74,18 @@ async def download(session, url, mkd=True):
 crawled = set()
 
 
-def convert_link(from_url, to_url, subtree=""):
+def convert_link(from_url, to_url, regex=""):
 
     f = uparse.urlparse(from_url)
     t = uparse.urlparse(to_url)
-    # print(f.path,t.path,subtree)
-    if f.netloc != t.netloc or not t.path.startswith(subtree):
+#    print(f.path,t.path,regex)
+    if f.netloc != t.netloc or not re.match(regex,uparse.unquote(t.path)):
         return None
     topath = t.path
     if opath.basename(t.path) == "":
         topath += "index"
-    if not "." in opath.basename(t.path):
+    
+    if not "." in opath.basename(t.path) or topath.endswith('.php'):
         topath += ".html"
     frompath = opath.dirname(f.path)
     frompath = "/" + frompath
@@ -102,7 +103,7 @@ async def extract_links(extractor, url, path):
     return links
 
 
-async def crawl(session, url, fn=None, subtree="", custom=None,make_dirs=True):
+async def crawl(session, url, fn=None, regex="", custom=None,make_dirs=True):
     doctype, path = await download(session, url,make_dirs)
     if path is None:
         return set()
@@ -120,7 +121,7 @@ async def crawl(session, url, fn=None, subtree="", custom=None,make_dirs=True):
     def fix_link(x):
         if fn is None:
             return x
-        y = fn(url, x, subtree)
+        y = fn(url, x, regex)
         if y is None:
             # print('default',x)
             return x
@@ -161,6 +162,13 @@ async def main(args):
                     print(e)
                     pass
             args.url += links
+        if args.m3u:
+            for line in (await fetch(session,args.m3u)).split('\n'): 
+                if not line.startswith('#'):
+                    if 'http' in args.m3u:
+                        args.url.append(uparse.urljoin(args.m3u, line.strip()))
+                    else:
+                        args.url.append(line.strip())
         # print(args.url)
         if args.crawl:
             urlset = set(args.url)
@@ -181,7 +189,7 @@ async def main(args):
                             session,
                             url,
                             fn=convert_link,
-                            subtree=args.subtree if args.subtree else "",
+                            regex=args.regex if args.regex else "",
                             custom=args.exec,
                             make_dirs=args.make_dirs,
                         )
@@ -209,6 +217,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--rss", action="append", default=[], help="Use urls from rss feed"
     )
+    parser.add_argument("--m3u",help="Download m3u playlist")
     parser.add_argument("url", nargs="*", default=[], help="Url to file")
     parser.add_argument(
         "-c", "--concurrency", type=int, help="Number of concurrent downloads"
@@ -216,7 +225,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-r", "--crawl", action="store_true", help="Recursively crawl website"
     )
-    parser.add_argument("--subtree", help="Restrict crawler to subtree")
+    parser.add_argument("--regex", help="Restrict crawler to regex")
     parser.add_argument(
         "--exec",
         help="Extract links using shell command. Use it in conjunction with --crawl",
